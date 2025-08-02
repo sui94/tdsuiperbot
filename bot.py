@@ -140,8 +140,8 @@ def get_signals(hours_back=4):
                     current_upper = float(upper_series.iloc[idx])
                     current_lower = float(lower_series.iloc[idx])
                     
-                    is_oversold = (current_rsi < 30) and (current_low <= current_lower) and (current_close > current_lower)
-                    is_overbought = (current_rsi > 70) and (current_high >= current_upper) and (current_close < current_upper)
+                    is_oversold = (current_rsi < 30) and (current_low <= current_lower)
+                    is_overbought = (current_rsi > 70) and (current_high >= current_upper)
                     
                     if is_oversold or is_overbought:
                         signal_key = f"{symbol}_{current_timestamp}_{ 'oversold' if is_oversold else 'overbought' }"
@@ -223,27 +223,51 @@ async def scan24_command(update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /scan24."""
     await scan_specific_command(update, context, 24)
 
+# Глобальная переменная для хранения application
+application = None
+
 def run_bot():
-    """Запуск Telegram бота"""
+    """Запуск Telegram бота в основном потоке"""
+    global application
     try:
+        # Создаем event loop для текущего потока
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Создаем приложение
         application = Application.builder().token(TELEGRAM_TOKEN).build()
         
-        # Добавляем обработчики для разных команд
+        # Добавляем обработчики
         application.add_handler(CommandHandler('start', start_command))
         application.add_handler(CommandHandler('scan4', scan4_command))
         application.add_handler(CommandHandler('scan10', scan10_command))
         application.add_handler(CommandHandler('scan24', scan24_command))
-        
-        # Также добавляем обработчик для команды /scan (по умолчанию 4 часа)
         application.add_handler(CommandHandler('scan', scan4_command))
         
         logger.info("🚀 Бот успешно запущен! Доступные команды: /scan4, /scan10, /scan24")
         
-        # Запуск бота
-        application.run_polling(allowed_updates=None)
+        # Запускаем бота
+        loop.run_until_complete(application.initialize())
+        loop.run_until_complete(application.start())
+        loop.run_until_complete(application.updater.start_polling())
+        
+        # Держим loop активным
+        loop.run_forever()
         
     except Exception as e:
         logger.error(f"Критическая ошибка при запуске бота: {e}")
+
+def stop_bot():
+    """Остановка Telegram бота"""
+    global application
+    try:
+        if application:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(application.updater.stop())
+            loop.run_until_complete(application.stop())
+            loop.run_until_complete(application.shutdown())
+    except Exception as e:
+        logger.error(f"Ошибка при остановке бота: {e}")
 
 def main():
     # Запуск фиктивного веб-сервера для Render
@@ -262,6 +286,7 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Приложение остановлено")
+        stop_bot()
 
 if __name__ == "__main__":
     main()
